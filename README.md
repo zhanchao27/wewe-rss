@@ -111,6 +111,62 @@ pnpm run -r build
 pnpm run start:server
 ```
 
+#### Windows 环境配置
+
+**依赖安装**：
+
+```powershell
+# 安装 pnpm
+npm install -g pnpm
+
+# 设置镜像源（国内用户推荐）
+pnpm config set registry https://registry.npmmirror.com
+
+# 安装依赖
+pnpm install
+```
+
+**构建与运行**：
+
+```powershell
+# 设置环境变量（SQLite）
+$env:DATABASE_URL="file:../data/wewe-rss.db"
+$env:DATABASE_TYPE="sqlite"
+
+# 删除mysql相关文件,避免prisma生成mysql连接
+Remove-Item -Recurse -Force apps/server/prisma -ErrorAction SilentlyContinue
+Move-Item apps/server/prisma-sqlite apps/server/prisma -Force
+
+# 生成prisma client
+npx prisma generate --schema apps/server/prisma/schema.prisma
+
+# 生成数据库表
+npx prisma migrate deploy --schema apps/server/prisma/schema.prisma
+
+# 构建前端
+pnpm run build:web
+
+# 构建后端
+pnpm run build:server
+
+# 启动服务
+pnpm run start:server
+```
+
+**Docker 配置**（国内用户）：
+
+在 Docker Desktop 设置中添加国内镜像源：
+
+```json
+{
+   "registry-mirrors": [
+     "https://hub-mirror.c.163.com",
+     "https://docker.mirrors.ustc.edu.cn",
+     "https://mirror.baidubce.com"
+   ]
+}
+```
+
 ## ⚙️ 环境变量
 
 | 变量名                   | 说明                                                                    | 默认值                      |
@@ -166,6 +222,25 @@ pnpm run start:server
    
    ⚠️ **注意：此命令仅用于本地开发，不要用于部署！**
 4. 前端访问 `http://localhost:5173`，后端访问 `http://localhost:4000`
+
+### 版本发布
+
+项目提供跨平台的版本发布脚本：
+
+**Windows**：
+```powershell
+.\release.ps1 2.7.0
+```
+
+**macOS/Linux**：
+```bash
+./release.sh 2.7.0
+```
+
+脚本会自动：
+- 更新根目录和 apps 目录下的 `package.json` 版本号
+- 创建 Git 提交
+- 创建并推送 Git 标签
 
 ## ⚠️ 风险声明
 

@@ -1,5 +1,5 @@
 datasource db {
-  provider = "mysql"
+  provider = "sqlite"
   url      = env("DATABASE_URL")
 }
 
@@ -10,11 +10,11 @@ generator client {
 
 // 读书账号
 model Account {
-  id        String    @id @db.VarChar(255)
-  token     String    @map("token") @db.VarChar(2048)
-  name      String    @map("name") @db.VarChar(1024)
+  id        String    @id
+  token     String    @map("token")
+  name      String    @map("name")
   // 状态 0:失效 1:启用 2:禁用
-  status    Int       @default(1) @map("status") @db.Int()
+  status    Int       @default(1) @map("status")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at")
 
@@ -23,12 +23,12 @@ model Account {
 
 // 订阅源
 model Feed {
-  id      String @id @db.VarChar(255)
-  mpName  String @map("mp_name") @db.VarChar(512)
-  mpCover String @map("mp_cover") @db.VarChar(1024)
-  mpIntro String @map("mp_intro") @db.Text()
+  id      String @id
+  mpName  String @map("mp_name")
+  mpCover String @map("mp_cover")
+  mpIntro String @map("mp_intro")
   // 状态 0:失效 1:启用 2:禁用
-  status  Int    @default(1) @map("status") @db.Int()
+  status  Int    @default(1) @map("status")
 
   // article最后同步时间
   syncTime Int @default(0) @map("sync_time")
@@ -46,10 +46,10 @@ model Feed {
 }
 
 model Article {
-  id          String @id @db.VarChar(255)
-  mpId        String @map("mp_id") @db.VarChar(255)
-  title       String @map("title") @db.VarChar(255)
-  picUrl      String @map("pic_url") @db.VarChar(255)
+  id          String @id
+  mpId        String @map("mp_id")
+  title       String @map("title")
+  picUrl      String @map("pic_url")
   publishTime Int    @map("publish_time")
 
   createdAt DateTime  @default(now()) @map("created_at")
