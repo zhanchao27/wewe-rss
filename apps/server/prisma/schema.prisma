@@ -5,15 +5,13 @@ datasource db {
 
 generator client {
   provider      = "prisma-client-js"
-  binaryTargets = ["native", "linux-musl"] // 生成linux可执行文件
+  binaryTargets = ["native", "linux-musl"]
 }
 
-// 读书账号
 model Account {
   id        String    @id
   token     String    @map("token")
   name      String    @map("name")
-  // 状态 0:失效 1:启用 2:禁用
   status    Int       @default(1) @map("status")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at")
@@ -21,25 +19,16 @@ model Account {
   @@map("accounts")
 }
 
-// 订阅源
 model Feed {
   id      String @id
   mpName  String @map("mp_name")
   mpCover String @map("mp_cover")
   mpIntro String @map("mp_intro")
-  // 状态 0:失效 1:启用 2:禁用
   status  Int    @default(1) @map("status")
-
-  // article最后同步时间
-  syncTime Int @default(0) @map("sync_time")
-
-  // 信息更新时间
-  updateTime Int @map("update_time")
-
+  syncTime Int    @default(0) @map("sync_time")
+  updateTime Int  @map("update_time")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at")
-
-  // 是否有历史文章 1 是  0 否
   hasHistory Int? @default(1) @map("has_history")
 
   @@map("feeds")
@@ -51,9 +40,41 @@ model Article {
   title       String @map("title")
   picUrl      String @map("pic_url")
   publishTime Int    @map("publish_time")
-
+  content     String? @map("content")
+  author      String? @map("author")
+  url         String? @map("url")
+  status      Int @default(0) @map("status")
+  qualityScore Float? @default(0) @map("quality_score")
   createdAt DateTime  @default(now()) @map("created_at")
   updatedAt DateTime? @default(now()) @updatedAt @map("updated_at")
 
   @@map("articles")
+}
+
+model ArticleRun {
+  id          String @id
+  feedId      String @map("feed_id")
+  startTime   DateTime @default(now()) @map("start_time")
+  endTime     DateTime? @map("end_time")
+  status      String @default("running") @map("status")
+  articlesProcessed Int @default(0) @map("articles_processed")
+  articlesSuccess   Int @default(0) @map("articles_success")
+  articlesFailed    Int @default(0) @map("articles_failed")
+  errors      String? @map("errors")
+
+  @@map("article_runs")
+}
+
+model ExtractionLog {
+  id          String @id
+  articleId   String @map("article_id")
+  runId       String @map("run_id")
+  status      String @map("status")
+  errorType   String? @map("error_type")
+  errorMsg    String? @map("error_msg")
+  qualityScore Float? @map("quality_score")
+  contentLength Int? @map("content_length")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@map("extraction_logs")
 }
