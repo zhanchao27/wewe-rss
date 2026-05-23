@@ -1,0 +1,43 @@
+{
+  "feed_info": {
+    "id": "mp_002",
+    "mp_name": "美食天下",
+    "mp_cover": "https://picsum.photos/100/100?random=2",
+    "mp_intro": "分享美食食谱与烹饪技巧",
+    "status": 1,
+    "sync_time": 1778834350,
+    "update_time": 1778834350,
+    "created_at": "2026-05-15 08:39:10",
+    "updated_at": null,
+    "has_history": 1
+  },
+  "articles": [
+    {
+      "id": "art_004",
+      "mp_id": "mp_002",
+      "title": "家常红烧肉的正宗做法",
+      "pic_url": "https://picsum.photos/400/250?random=4",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    },
+    {
+      "id": "art_005",
+      "mp_id": "mp_002",
+      "title": "夏日清凉甜品推荐",
+      "pic_url": "https://picsum.photos/400/250?random=5",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    },
+    {
+      "id": "art_006",
+      "mp_id": "mp_002",
+      "title": "零基础烘焙入门指南",
+      "pic_url": "https://picsum.photos/400/250?random=6",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    }
+  ]
+}

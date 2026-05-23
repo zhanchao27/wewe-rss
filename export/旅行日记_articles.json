@@ -1,0 +1,43 @@
+{
+  "feed_info": {
+    "id": "mp_003",
+    "mp_name": "旅行日记",
+    "mp_cover": "https://picsum.photos/100/100?random=3",
+    "mp_intro": "记录旅行中的美好时光",
+    "status": 1,
+    "sync_time": 1778834350,
+    "update_time": 1778834350,
+    "created_at": "2026-05-15 08:39:10",
+    "updated_at": null,
+    "has_history": 1
+  },
+  "articles": [
+    {
+      "id": "art_007",
+      "mp_id": "mp_003",
+      "title": "云南大理深度游攻略",
+      "pic_url": "https://picsum.photos/400/250?random=7",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    },
+    {
+      "id": "art_008",
+      "mp_id": "mp_003",
+      "title": "西藏自驾游注意事项",
+      "pic_url": "https://picsum.photos/400/250?random=8",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    },
+    {
+      "id": "art_009",
+      "mp_id": "mp_003",
+      "title": "海岛度假最佳目的地推荐",
+      "pic_url": "https://picsum.photos/400/250?random=9",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    }
+  ]
+}

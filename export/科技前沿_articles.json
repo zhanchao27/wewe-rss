@@ -1,0 +1,43 @@
+{
+  "feed_info": {
+    "id": "mp_001",
+    "mp_name": "科技前沿",
+    "mp_cover": "https://picsum.photos/100/100?random=1",
+    "mp_intro": "专注科技领域最新资讯",
+    "status": 1,
+    "sync_time": 1778834350,
+    "update_time": 1778834350,
+    "created_at": "2026-05-15 08:39:10",
+    "updated_at": null,
+    "has_history": 1
+  },
+  "articles": [
+    {
+      "id": "art_001",
+      "mp_id": "mp_001",
+      "title": "2024年人工智能发展趋势展望",
+      "pic_url": "https://picsum.photos/400/250?random=1",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    },
+    {
+      "id": "art_002",
+      "mp_id": "mp_001",
+      "title": "量子计算突破：新算法大幅提升效率",
+      "pic_url": "https://picsum.photos/400/250?random=2",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    },
+    {
+      "id": "art_003",
+      "mp_id": "mp_001",
+      "title": "自动驾驶技术迎来新里程碑",
+      "pic_url": "https://picsum.photos/400/250?random=3",
+      "publish_time": 1778834350,
+      "created_at": "2026-05-15 08:39:10",
+      "updated_at": null
+    }
+  ]
+}
