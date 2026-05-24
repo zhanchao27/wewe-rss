@@ -39,9 +39,9 @@ const CONFIG = {
       description: '测试在最大文章数基础上能抓多少公众号',
       days: 3,
       phases: [
-        { name: 'Day4-小批量', day: 4, accounts: 5, articlesPerAccount: 10, totalArticles: 50, delay: '30-60秒' },
-        { name: 'Day5-中批量', day: 5, accounts: 8, articlesPerAccount: 10, totalArticles: 80, delay: '25-50秒' },
-        { name: 'Day6-大批量', day: 6, accounts: 10, articlesPerAccount: 10, totalArticles: 100, delay: '20-45秒' },
+        { name: 'Day4-小批量', day: 4, accounts: 10, articlesPerAccount: 10, totalArticles: 100, delay: '30-60秒' },
+        { name: 'Day5-中批量', day: 5, accounts: 20, articlesPerAccount: 10, totalArticles: 200, delay: '25-50秒' },
+        { name: 'Day6-大批量', day: 6, accounts: 40, articlesPerAccount: 10, totalArticles: 400, delay: '20-45秒' },
       ]
     },
     interval: {
@@ -169,6 +169,27 @@ class PressureTest9Day {
     }
   }
 
+  async getFeedsFromDatabase(count = 10) {
+    try {
+      const { PrismaClient } = require('@prisma/client');
+      const prisma = new PrismaClient({
+        datasources: { db: { url: CONFIG.database.url } }
+      });
+
+      const feeds = await prisma.feed.findMany({
+        where: { status: 1 },
+        take: count,
+        select: { id: true, mpName: true }
+      });
+
+      await prisma.$disconnect();
+      return feeds;
+    } catch (error) {
+      console.error('获取订阅源失败:', error.message);
+      return [];
+    }
+  }
+
   async runPhase(phase, testType) {
     console.log(`\n${'─'.repeat(60)}`);
     console.log(`📅 ${phase.name}`);
@@ -177,7 +198,31 @@ class PressureTest9Day {
     console.log(`延迟: ${phase.delay}`);
     console.log('');
 
-    const articles = await this.getDatabaseArticles(phase.totalArticles);
+    let articles = [];
+
+    if (testType === 'account-count') {
+      const feeds = await this.getFeedsFromDatabase(phase.accounts);
+      console.log(`📡 已获取 ${feeds.length} 个订阅源\n`);
+
+      if (feeds.length < phase.accounts) {
+        console.log(`⚠️  数据库中只有 ${feeds.length} 个订阅源，少于需求的 ${phase.accounts} 个`);
+      }
+
+      for (const feed of feeds) {
+        const feedArticles = await this.getDatabaseArticles(phase.articlesPerAccount);
+        const filteredArticles = feedArticles.filter(a => a.mpId === feed.id);
+        articles.push(...filteredArticles.map(a => ({ ...a, feedName: feed.mpName })));
+
+        if (articles.length >= phase.totalArticles) break;
+      }
+
+      if (articles.length === 0) {
+        console.log('❌ 没有足够的文章进行测试');
+        return null;
+      }
+    } else {
+      articles = await this.getDatabaseArticles(phase.totalArticles);
+    }
 
     if (articles.length === 0) {
       console.log('❌ 数据库中没有足够的文章进行测试');
@@ -185,7 +230,7 @@ class PressureTest9Day {
     }
 
     if (articles.length < phase.totalArticles) {
-      console.log(`⚠️  数据库中只有 ${articles.length} 篇文章，少于需求的 ${phase.totalArticles} 篇`);
+      console.log(`⚠️  只有 ${articles.length} 篇文章，少于需求的 ${phase.totalArticles} 篇`);
     }
 
     let success = 0;
@@ -213,7 +258,8 @@ class PressureTest9Day {
       const progress = ((i + 1) / articles.length * 100).toFixed(0);
       const status = result.success ? '✅' : '❌';
       const size = result.contentLength ? `${(result.contentLength / 1024).toFixed(1)}KB` : '-';
-      console.log(`  [${progress}%] ${status} ${article.title.substring(0, 18)}.. | ${result.responseTime}ms | ${size}`);
+      const title = article.title ? article.title.substring(0, 15) : '无标题';
+      console.log(`  [${progress}%] ${status} ${title}.. | ${result.responseTime}ms | ${size}`);
 
       if (i < articles.length - 1) {
         const delay = this.getRandomDelay(delayMin, delayMax);
