@@ -158,7 +158,7 @@ class PressureTest9Day {
       const articles = await prisma.article.findMany({
         take: limit,
         orderBy: { createdAt: 'desc' },
-        select: { id: true, title: true, feedId: true }
+        select: { id: true, title: true, mpId: true }
       });
 
       await prisma.$disconnect();
