@@ -8,9 +8,15 @@
  *
  * 使用方式：
  *   node test/comprehensive-pressure-test.js --test=account-limit    # 测试公众号上限
- *   node test/comprehensive-pressure-test.js --test=interval     # 测试抓取间隔
- *   node test/comprehensive-pressure-test.js --test=combined       # 综合压力测试
- *   node test/comprehensive-pressure-test.js --report              # 生成测试报告
+ *   node test/comprehensive-pressure-test.js --test=interval         # 测试抓取间隔
+ *   node test/comprehensive-pressure-test.js --test=combined        # 综合压力测试
+ *   node test/comprehensive-pressure-test.js --day=1                 # 指定第N天测试
+ *   node test/comprehensive-pressure-test.js --report               # 生成测试报告
+ *
+ * 9天测试计划：
+ *   Day 1-3: 公众号抓取上限测试
+ *   Day 4-6: 抓取间隔测试
+ *   Day 7-9: 综合压力测试
  */
 
 const got = require('got');
@@ -26,30 +32,40 @@ const CONFIG = {
     accountLimit: {
       name: '公众号抓取上限测试',
       description: '测试单批次最大能安全抓取的公众号数量',
+      days: 3,
       phases: [
-        { name: '小批量', accounts: 3, articles: 5, delay: '30-60秒', dailyLimit: 30 },
-        { name: '中批量', accounts: 5, articles: 8, delay: '25-50秒', dailyLimit: 50 },
-        { name: '大批量', accounts: 8, articles: 10, delay: '20-45秒', dailyLimit: 80 },
-        { name: '极限测试', accounts: 10, articles: 10, delay: '15-30秒', dailyLimit: 100 },
+        { name: 'Day1-小批量', day: 1, accounts: 3, articles: 5, delay: '30-60秒', dailyLimit: 30 },
+        { name: 'Day1-增量测试', day: 1, accounts: 5, articles: 5, delay: '30-60秒', dailyLimit: 40 },
+        { name: 'Day2-中批量', day: 2, accounts: 5, articles: 8, delay: '25-50秒', dailyLimit: 50 },
+        { name: 'Day2-增量测试', day: 2, accounts: 7, articles: 8, delay: '25-50秒', dailyLimit: 60 },
+        { name: 'Day3-大批量', day: 3, accounts: 8, articles: 10, delay: '20-45秒', dailyLimit: 80 },
+        { name: 'Day3-极限测试', day: 3, accounts: 10, articles: 10, delay: '15-30秒', dailyLimit: 100 },
       ]
     },
     interval: {
       name: '抓取间隔测试',
       description: '测试不同间隔时间下的成功率',
+      days: 3,
       phases: [
-        { name: '长间隔', minDelay: 45, maxDelay: 90, description: '45-90秒间隔' },
-        { name: '标准间隔', minDelay: 30, maxDelay: 60, description: '30-60秒间隔' },
-        { name: '短间隔', minDelay: 20, maxDelay: 40, description: '20-40秒间隔' },
-        { name: '极限间隔', minDelay: 10, maxDelay: 20, description: '10-20秒间隔' },
+        { name: 'Day4-长间隔', day: 4, minDelay: 45, maxDelay: 90, description: '45-90秒间隔' },
+        { name: 'Day4-标准测试', day: 4, minDelay: 30, maxDelay: 60, description: '30-60秒间隔' },
+        { name: 'Day5-短间隔', day: 5, minDelay: 20, maxDelay: 40, description: '20-40秒间隔' },
+        { name: 'Day5-稳定性测试', day: 5, minDelay: 25, maxDelay: 50, description: '25-50秒间隔' },
+        { name: 'Day6-极限间隔', day: 6, minDelay: 10, maxDelay: 20, description: '10-20秒间隔' },
+        { name: 'Day6-混合测试', day: 6, minDelay: 15, maxDelay: 35, description: '15-35秒间隔' },
       ]
     },
     combined: {
       name: '综合压力测试',
       description: '模拟实际生产环境的连续抓取',
+      days: 3,
       phases: [
-        { name: '连续1小时', duration: 60 * 60 * 1000, config: '标准' },
-        { name: '连续2小时', duration: 2 * 60 * 60 * 1000, config: '标准' },
-        { name: '连续4小时', duration: 4 * 60 * 60 * 1000, config: '高负载' },
+        { name: 'Day7-连续1小时', day: 7, duration: 60 * 60 * 1000, config: '标准', batchSize: 5, delay: '30-60秒' },
+        { name: 'Day7-连续2小时', day: 7, duration: 2 * 60 * 60 * 1000, config: '标准', batchSize: 5, delay: '30-60秒' },
+        { name: 'Day8-连续2小时', day: 8, duration: 2 * 60 * 60 * 1000, config: '高负载', batchSize: 8, delay: '20-45秒' },
+        { name: 'Day8-连续3小时', day: 8, duration: 3 * 60 * 60 * 1000, config: '高负载', batchSize: 8, delay: '20-45秒' },
+        { name: 'Day9-连续4小时', day: 9, duration: 4 * 60 * 60 * 1000, config: '极限', batchSize: 10, delay: '15-30秒' },
+        { name: 'Day9-长时稳定性', day: 9, duration: 4 * 60 * 60 * 1000, config: '极限', batchSize: 10, delay: '15-30秒' },
       ]
     }
   },
@@ -146,7 +162,7 @@ class ComprehensivePressureTest {
     try {
       const { PrismaClient } = require('@prisma/client');
       const prisma = new PrismaClient({
-        datasources: { db: { url: this.config.database.url } }
+        datasources: { db: { url: this.config?.database?.url || CONFIG.database.url } }
       });
 
       const articles = await prisma.article.findMany({
@@ -178,7 +194,6 @@ class ComprehensivePressureTest {
       return null;
     }
 
-    const results = [];
     let success = 0;
     let failed = 0;
 
@@ -218,6 +233,7 @@ class ComprehensivePressureTest {
 
     return {
       phase: phase.name,
+      day: phase.day,
       config: phase,
       total: articles.length,
       success,
@@ -242,7 +258,6 @@ class ComprehensivePressureTest {
       return null;
     }
 
-    const results = [];
     let success = 0;
     let failed = 0;
 
@@ -283,6 +298,7 @@ class ComprehensivePressureTest {
 
     return {
       phase: phase.name,
+      day: phase.day,
       config: phase,
       total: articles.length,
       success,
@@ -297,14 +313,17 @@ class ComprehensivePressureTest {
     console.log(`\n${'='.repeat(60)}`);
     console.log(`  🔥 综合压力测试 - ${phase.name}`);
     console.log(`${'='.repeat(60)}`);
-    console.log(`配置: 持续运行 ${phase.duration / 1000 / 60} 分钟\n`);
+    console.log(`配置: 持续运行 ${phase.duration / 1000 / 60} 分钟`);
+    console.log(`批次大小: ${phase.batchSize}, 延迟: ${phase.delay}\n`);
 
     this.currentPhase = phase.name;
     this.metrics.startTime = Date.now();
 
-    const config = phase.config === '高负载'
-      ? { minDelay: 15, maxDelay: 30, batchSize: 10 }
-      : { minDelay: 30, maxDelay: 60, batchSize: 5 };
+    const config = {
+      minDelay: parseInt(phase.delay.split('-')[0]),
+      maxDelay: parseInt(phase.delay.split('-')[1].replace('秒', '')),
+      batchSize: phase.batchSize
+    };
 
     let batchCount = 0;
     let totalSuccess = 0;
@@ -366,6 +385,7 @@ class ComprehensivePressureTest {
 
     return {
       phase: phase.name,
+      day: phase.day,
       config: phase,
       batches: batchCount,
       total: totalSuccess + totalFailed,
@@ -377,10 +397,10 @@ class ComprehensivePressureTest {
     };
   }
 
-  async runTest(testType) {
+  async runTest(testType, specificDay = null) {
     console.log(`
 ╔══════════════════════════════════════════════════════════════╗
-║       方案B全文存储 - 综合压力测试                         ║
+║       方案B全文存储 - 9天综合压力测试                      ║
 ╚══════════════════════════════════════════════════════════════╝
     `);
 
@@ -395,52 +415,73 @@ class ComprehensivePressureTest {
     };
     this.shouldStop = false;
 
-    let results = [];
+    let testConfig;
+    let testFn;
 
-    try {
-      if (testType === 'account-limit') {
-        for (const phase of CONFIG.test.accountLimit.phases) {
-          const result = await this.testAccountLimit(phase);
-          if (result) results.push(result);
-          this.metrics.phaseResults.push(result);
+    if (testType === 'account-limit') {
+      testConfig = CONFIG.test.accountLimit;
+      testFn = (p) => this.testAccountLimit(p);
+    } else if (testType === 'interval') {
+      testConfig = CONFIG.test.interval;
+      testFn = (p) => this.testInterval(p);
+    } else if (testType === 'combined') {
+      testConfig = CONFIG.test.combined;
+      testFn = (p) => this.testCombined(p);
+    } else {
+      console.error('未知的测试类型:', testType);
+      return;
+    }
 
-          await new Promise(resolve => setTimeout(resolve, 300000));
-        }
-      } else if (testType === 'interval') {
-        for (const phase of CONFIG.test.interval.phases) {
-          const result = await this.testInterval(phase);
-          if (result) results.push(result);
-          this.metrics.phaseResults.push(result);
+    console.log(`测试类型: ${testConfig.name}`);
+    console.log(`测试天数: ${testConfig.days}天`);
+    console.log(`总阶段数: ${testConfig.phases.length}\n`);
 
-          await new Promise(resolve => setTimeout(resolve, 300000));
-        }
-      } else if (testType === 'combined') {
-        for (const phase of CONFIG.test.combined.phases) {
-          const result = await this.testCombined(phase);
-          if (result) results.push(result);
-          this.metrics.phaseResults.push(result);
-        }
+    const results = [];
+    const phases = specificDay
+      ? testConfig.phases.filter(p => p.day === specificDay)
+      : testConfig.phases;
+
+    for (const phase of phases) {
+      console.log(`\n${'─'.repeat(60)}`);
+      console.log(`📅 第${phase.day}天测试 - ${testConfig.name}`);
+      console.log(`${'─'.repeat(60)}`);
+
+      const result = await testFn(phase);
+      if (result) {
+        results.push(result);
+        this.metrics.phaseResults.push(result);
       }
 
-      this.metrics.endTime = Date.now();
-      this.saveReport(results, testType);
-      this.printSummary(results, testType);
-
-    } catch (error) {
-      console.error('测试执行失败:', error);
+      const currentPhaseIndex = phases.indexOf(phase);
+      if (currentPhaseIndex < phases.length - 1) {
+        const nextPhase = phases[currentPhaseIndex + 1];
+        if (nextPhase.day !== phase.day) {
+          console.log(`\n⏰ 第${phase.day}天测试完成，暂停2分钟后开始第${nextPhase.day}天...`);
+          await new Promise(resolve => setTimeout(resolve, 120000));
+        } else {
+          console.log(`\n⏳ 阶段间暂停30秒...`);
+          await new Promise(resolve => setTimeout(resolve, 30000));
+        }
+      }
     }
+
+    this.metrics.endTime = Date.now();
+    this.saveReport(results, testType, specificDay);
+    this.printSummary(results, testType);
   }
 
-  saveReport(results, testType) {
-    const reportDir = path.join(__dirname, 'data', 'comprehensive-test');
+  saveReport(results, testType, specificDay) {
+    const reportDir = path.join(__dirname, 'data', 'comprehensive-test', '9day');
     if (!fs.existsSync(reportDir)) {
       fs.mkdirSync(reportDir, { recursive: true });
     }
 
     const date = new Date().toISOString().split('T')[0];
+    const dayLabel = specificDay ? `-day${specificDay}` : '';
     const report = {
       date,
       testType,
+      days: specificDay || 'all',
       summary: {
         totalRequests: this.metrics.totalRequests,
         successRequests: this.metrics.successRequests,
@@ -451,11 +492,11 @@ class ComprehensivePressureTest {
       errors: this.metrics.errors.slice(0, 50)
     };
 
-    const jsonFile = path.join(reportDir, `${date}-${testType}-report.json`);
+    const jsonFile = path.join(reportDir, `${date}-${testType}${dayLabel}-report.json`);
     fs.writeFileSync(jsonFile, JSON.stringify(report, null, 2));
 
     const mdContent = this.generateMarkdownReport(report);
-    const mdFile = path.join(reportDir, `${date}-${testType}-report.md`);
+    const mdFile = path.join(reportDir, `${date}-${testType}${dayLabel}-report.md`);
     fs.writeFileSync(mdFile, mdContent);
 
     console.log(`\n📄 报告已保存:`);
@@ -464,10 +505,17 @@ class ComprehensivePressureTest {
   }
 
   generateMarkdownReport(report) {
-    let content = `# 📊 方案B综合压力测试报告
+    const typeNames = {
+      'account-limit': '公众号抓取上限测试',
+      'interval': '抓取间隔测试',
+      'combined': '综合压力测试'
+    };
 
-**测试类型**: ${report.testType === 'account-limit' ? '公众号抓取上限测试' : report.testType === 'interval' ? '抓取间隔测试' : '综合压力测试'}
+    let content = `# 📊 方案B综合压力测试报告 (9天计划)
+
+**测试类型**: ${typeNames[report.testType]}
 **测试日期**: ${report.date}
+**测试天数**: ${report.days === 'all' ? '全部' : `Day ${report.days}`}
 **总请求数**: ${report.summary.totalRequests}
 **成功率**: ${report.summary.overallSuccessRate}%
 
@@ -475,36 +523,32 @@ class ComprehensivePressureTest {
 
 ## 测试配置
 
-| 测试类型 | 配置 |
-|---------|------|
+| 阶段 | 天数 | 配置 |
+|------|------|------|
 `;
 
-    if (report.testType === 'account-limit') {
-      report.phaseResults.forEach(r => {
-        content += `| ${r.phase} | ${r.config.accounts}个公众号, ${r.config.articles}篇/公众号, 延迟${r.config.delay} |\n`;
-      });
-    } else if (report.testType === 'interval') {
-      report.phaseResults.forEach(r => {
-        content += `| ${r.phase} | 间隔${r.config.minDelay}-${r.config.maxDelay}秒 |\n`;
-      });
-    } else {
-      report.phaseResults.forEach(r => {
-        content += `| ${r.phase} | 持续${Math.round(r.duration / 60)}分钟 |\n`;
-      });
-    }
+    report.phaseResults.forEach(r => {
+      if (report.testType === 'account-limit') {
+        content += `| ${r.phase} | Day ${r.day} | ${r.config.accounts}个公众号, ${r.config.articles}篇/公众号, 延迟${r.config.delay} |\n`;
+      } else if (report.testType === 'interval') {
+        content += `| ${r.phase} | Day ${r.day} | 间隔${r.config.minDelay}-${r.config.maxDelay}秒 |\n`;
+      } else {
+        content += `| ${r.phase} | Day ${r.day} | 持续${Math.round(r.duration / 60)}分钟, ${r.config.batchSize}个/批 |\n`;
+      }
+    });
 
     content += `
 ---
 
 ## 测试结果
 
-| 阶段 | 总数 | 成功 | 失败 | 成功率 | 状态 |
-|------|------|------|------|--------|------|
+| 阶段 | 天数 | 总数 | 成功 | 失败 | 成功率 | 状态 |
+|------|------|------|------|------|--------|------|
 `;
 
     report.phaseResults.forEach(r => {
       const status = r.successRate >= 95 ? '🟢 正常' : r.successRate >= 85 ? '🟡 警告' : '🔴 危险';
-      content += `| ${r.phase} | ${r.total} | ${r.success} | ${r.failed} | ${r.successRate}% | ${status} |\n`;
+      content += `| ${r.phase} | Day ${r.day} | ${r.total} | ${r.success} | ${r.failed} | ${r.successRate}% | ${status} |\n`;
     });
 
     content += `
@@ -524,6 +568,34 @@ class ComprehensivePressureTest {
     Object.entries(errorCounts).forEach(([type, count]) => {
       content += `| ${type} | ${count} |\n`;
     });
+
+    content += `
+---
+
+## 推荐配置
+
+| 参数 | 推荐值 | 测试确认 |
+|------|--------|----------|
+`;
+
+    if (report.testType === 'account-limit') {
+      const bestResult = report.phaseResults.reduce((best, r) => r.successRate > best.successRate ? r : best);
+      content += `| 单批次公众号数 | ${bestResult.config.accounts}个 | 成功率 ${bestResult.successRate}% |\n`;
+      content += `| 每日抓取上限 | ${bestResult.config.dailyLimit}篇 | 成功率 ${bestResult.successRate}% |\n`;
+    } else if (report.testType === 'interval') {
+      const safeResults = report.phaseResults.filter(r => r.successRate >= 95);
+      if (safeResults.length > 0) {
+        const safest = safeResults.reduce((min, r) => r.avgInterval < min.avgInterval ? r : min);
+        content += `| 安全间隔 | ${safest.config.minDelay}-${safest.config.maxDelay}秒 | 成功率 ${safest.successRate}% |\n`;
+      }
+    } else {
+      const stableResults = report.phaseResults.filter(r => r.successRate >= 92);
+      if (stableResults.length > 0) {
+        const longest = stableResults.reduce((max, r) => r.duration > max.duration ? r : max);
+        content += `| 连续运行时间 | ${Math.round(longest.duration / 60)}分钟 | 成功率 ${longest.successRate}% |\n`;
+        content += `| 批次配置 | ${longest.config.batchSize}个/批 | 成功率 ${longest.successRate}% |\n`;
+      }
+    }
 
     content += `
 ---
@@ -581,6 +653,7 @@ ${'='.repeat(60)}
 if (require.main === module) {
   const args = process.argv.slice(2);
   const testType = args.find(arg => arg.startsWith('--test='))?.split('=')[1] || 'account-limit';
+  const specificDay = args.find(arg => arg.startsWith('--day='))?.split('=')[1];
 
   const tester = new ComprehensivePressureTest();
 
@@ -589,7 +662,7 @@ if (require.main === module) {
     setTimeout(() => process.exit(0), 1000);
   });
 
-  tester.runTest(testType);
+  tester.runTest(testType, specificDay ? parseInt(specificDay) : null);
 }
 
 module.exports = ComprehensivePressureTest;
