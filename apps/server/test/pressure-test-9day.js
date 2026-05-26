@@ -70,7 +70,6 @@ const CONFIG = {
 };
 
 const USER_AGENTS = CONFIG.userAgents;
-const DB_PATH = path.join(__dirname, '..', '..', 'data', 'wewe-rss.db');
 
 class PressureTest9Day {
   constructor() {
@@ -85,6 +84,17 @@ class PressureTest9Day {
     };
     this.shouldStop = false;
     this.testResults = {};
+    this.logger = {
+      info: (msg, ...args) => console.log(`[${this.getTimestamp()}] ℹ️  ${msg}`, ...args),
+      success: (msg, ...args) => console.log(`[${this.getTimestamp()}] ✅ ${msg}`, ...args),
+      warn: (msg, ...args) => console.warn(`[${this.getTimestamp()}] ⚠️  ${msg}`, ...args),
+      error: (msg, ...args) => console.error(`[${this.getTimestamp()}] ❌ ${msg}`, ...args),
+      debug: (msg, ...args) => console.log(`[${this.getTimestamp()}] 🔍 ${msg}`, ...args),
+    };
+  }
+
+  getTimestamp() {
+    return new Date().toLocaleTimeString('zh-CN', { hour12: false });
   }
 
   getRandomUserAgent() {
@@ -95,14 +105,17 @@ class PressureTest9Day {
     return Math.floor(Math.random() * (max - min) + min) * 1000;
   }
 
-  async fetchArticle(articleId) {
+  async fetchArticle(articleId, index, total) {
     const articleUrl = `https://mp.weixin.qq.com/s/${articleId}`;
     const startTime = Date.now();
+    const userAgent = this.getRandomUserAgent();
+
+    this.logger.debug(`[${index + 1}/${total}] 开始抓取文章: ${articleId}`);
 
     try {
       const response = await got(articleUrl, {
         headers: {
-          'User-Agent': this.getRandomUserAgent(),
+          'User-Agent': userAgent,
           'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
           'Accept-Language': 'zh-CN,zh;q=0.9,en;q=0.8',
           'Accept-Encoding': 'gzip, deflate, br',
@@ -115,6 +128,9 @@ class PressureTest9Day {
       const author = $('#js_name').text().trim() || '未知作者';
       const content = $('.rich_media_content').html() || '';
       const contentLength = content.length;
+      const responseTime = Date.now() - startTime;
+
+      this.logger.debug(`[${index + 1}/${total}] 解析完成: "${title.substring(0, 20)}..." | ${responseTime}ms | ${(contentLength / 1024).toFixed(1)}KB`);
 
       return {
         success: true,
@@ -122,15 +138,20 @@ class PressureTest9Day {
         title,
         author,
         contentLength,
-        responseTime: Date.now() - startTime,
+        responseTime,
       };
     } catch (error) {
+      const errorType = this.getErrorType(error);
+      const responseTime = Date.now() - startTime;
+
+      this.logger.warn(`[${index + 1}/${total}] 抓取失败: ${errorType} | ${articleId} | ${responseTime}ms`);
+
       return {
         success: false,
         articleId,
-        errorType: this.getErrorType(error),
+        errorType,
         errorMessage: error.message,
-        responseTime: Date.now() - startTime,
+        responseTime,
       };
     }
   }
@@ -138,14 +159,36 @@ class PressureTest9Day {
   getErrorType(error) {
     if (error.response) {
       const status = error.response.statusCode;
-      if (status === 403) return '403_禁止访问';
-      if (status === 429) return '429_请求过多';
-      if (status >= 500) return '5xx_服务器错误';
+      if (status === 403) return '403_禁止访问(可能被封号)';
+      if (status === 429) return '429_请求过多(触发限流)';
+      if (status >= 500) return '5xx_服务器错误(微信服务端异常)';
       return `HTTP_${status}`;
     }
-    if (error.code === 'ETIMEDOUT') return '超时';
+    if (error.code === 'ETIMEDOUT') return '请求超时';
     if (error.code === 'ECONNREFUSED') return '连接被拒绝';
+    if (error.code === 'ENOTFOUND') return '域名解析失败';
     return '网络错误';
+  }
+
+  async checkDatabaseConnection() {
+    this.logger.info('正在连接数据库...');
+    try {
+      const { PrismaClient } = require('@prisma/client');
+      const prisma = new PrismaClient({
+        datasources: { db: { url: CONFIG.database.url } }
+      });
+
+      const articleCount = await prisma.article.count();
+      const feedCount = await prisma.feed.count();
+
+      this.logger.success(`数据库连接成功 | 文章数: ${articleCount} | 订阅源数: ${feedCount}`);
+
+      await prisma.$disconnect();
+      return { articleCount, feedCount };
+    } catch (error) {
+      this.logger.error(`数据库连接失败: ${error.message}`);
+      return null;
+    }
   }
 
   async getDatabaseArticles(limit = 100) {
@@ -164,7 +207,7 @@ class PressureTest9Day {
       await prisma.$disconnect();
       return articles;
     } catch (error) {
-      console.error('数据库查询失败:', error.message);
+      this.logger.error(`查询文章失败: ${error.message}`);
       return [];
     }
   }
@@ -185,52 +228,62 @@ class PressureTest9Day {
       await prisma.$disconnect();
       return feeds;
     } catch (error) {
-      console.error('获取订阅源失败:', error.message);
+      this.logger.error(`查询订阅源失败: ${error.message}`);
       return [];
     }
   }
 
   async runPhase(phase, testType) {
-    console.log(`\n${'─'.repeat(60)}`);
-    console.log(`📅 ${phase.name}`);
-    console.log(`${'─'.repeat(60)}`);
-    console.log(`配置: ${phase.accounts}个公众号 × ${phase.articlesPerAccount}篇/公众号 = ${phase.totalArticles}篇`);
-    console.log(`延迟: ${phase.delay}`);
-    console.log('');
+    console.log(`\n${'═'.repeat(65)}`);
+    console.log(`📅 ${phase.name} - 开始执行`);
+    console.log(`${'═'.repeat(65)}`);
+    this.logger.info(`测试类型: ${testType} | 公众号数: ${phase.accounts} | 文章/公众号: ${phase.articlesPerAccount}`);
+    this.logger.info(`总目标: ${phase.totalArticles}篇 | 延迟: ${phase.delay}`);
 
+    const phaseStartTime = Date.now();
     let articles = [];
 
     if (testType === 'account-count') {
+      this.logger.info(`[模式] 公众号数量测试 - 从订阅源获取文章`);
       const feeds = await this.getFeedsFromDatabase(phase.accounts);
-      console.log(`📡 已获取 ${feeds.length} 个订阅源\n`);
+      this.logger.success(`已获取 ${feeds.length} 个订阅源`);
 
       if (feeds.length < phase.accounts) {
-        console.log(`⚠️  数据库中只有 ${feeds.length} 个订阅源，少于需求的 ${phase.accounts} 个`);
+        this.logger.warn(`订阅源数量不足! 请求: ${phase.accounts}, 实际: ${feeds.length}`);
       }
 
+      this.logger.info(`开始为每个订阅源获取文章...`);
       for (const feed of feeds) {
-        const feedArticles = await this.getDatabaseArticles(phase.articlesPerAccount);
+        this.logger.debug(`处理订阅源: ${feed.mpName} (${feed.id})`);
+        const feedArticles = await this.getDatabaseArticles(phase.articlesPerAccount * 2);
         const filteredArticles = feedArticles.filter(a => a.mpId === feed.id);
         articles.push(...filteredArticles.map(a => ({ ...a, feedName: feed.mpName })));
 
-        if (articles.length >= phase.totalArticles) break;
+        if (articles.length >= phase.totalArticles) {
+          this.logger.debug(`已达到目标文章数 ${phase.totalArticles}，停止获取`);
+          break;
+        }
       }
 
       if (articles.length === 0) {
-        console.log('❌ 没有足够的文章进行测试');
+        this.logger.error(`没有找到任何文章进行测试!`);
         return null;
       }
+
+      this.logger.success(`共获取 ${articles.length} 篇文章用于测试`);
     } else {
+      this.logger.info(`[模式] 文章数量测试 - 从数据库获取最新文章`);
       articles = await this.getDatabaseArticles(phase.totalArticles);
+      this.logger.success(`从数据库获取到 ${articles.length} 篇文章`);
     }
 
     if (articles.length === 0) {
-      console.log('❌ 数据库中没有足够的文章进行测试');
+      this.logger.error(`数据库中没有足够的文章进行测试`);
       return null;
     }
 
     if (articles.length < phase.totalArticles) {
-      console.log(`⚠️  只有 ${articles.length} 篇文章，少于需求的 ${phase.totalArticles} 篇`);
+      this.logger.warn(`文章数量不足 | 目标: ${phase.totalArticles} | 实际: ${articles.length}`);
     }
 
     let success = 0;
@@ -238,9 +291,11 @@ class PressureTest9Day {
     const delayMin = parseInt(phase.delay.split('-')[0]);
     const delayMax = parseInt(phase.delay.split('-')[1].replace('秒', ''));
 
+    this.logger.info(`开始抓取测试... 预计耗时: ${Math.round((articles.length * (delayMin + delayMax) / 2 + articles.length * 2) / 1000 / 60)}分钟`);
+
     for (let i = 0; i < articles.length && !this.shouldStop; i++) {
       const article = articles[i];
-      const result = await this.fetchArticle(article.id);
+      const result = await this.fetchArticle(article.id, i, articles.length);
 
       this.metrics.totalRequests++;
       if (result.success) {
@@ -251,31 +306,54 @@ class PressureTest9Day {
         failed++;
         this.metrics.errors.push({
           articleId: article.id,
+          title: article.title,
+          feedName: article.feedName || 'unknown',
           ...result
         });
+
+        if (result.errorType.includes('403') || result.errorType.includes('429')) {
+          this.logger.error(`⚠️  检测到封号/限流信号: ${result.errorType} | 建议立即停止测试`);
+        }
       }
 
-      const progress = ((i + 1) / articles.length * 100).toFixed(0);
+      const progress = ((i + 1) / articles.length * 100).toFixed(1);
       const status = result.success ? '✅' : '❌';
       const size = result.contentLength ? `${(result.contentLength / 1024).toFixed(1)}KB` : '-';
       const title = article.title ? article.title.substring(0, 15) : '无标题';
-      console.log(`  [${progress}%] ${status} ${title}.. | ${result.responseTime}ms | ${size}`);
+
+      process.stdout.write(`\r  [${progress}%] ${status} ${title}.. | ${result.responseTime}ms | ${size} | 成功: ${success} | 失败: ${failed}`);
 
       if (i < articles.length - 1) {
         const delay = this.getRandomDelay(delayMin, delayMax);
+        this.logger.debug(`等待 ${delay / 1000}秒后继续...`);
         await new Promise(resolve => setTimeout(resolve, delay));
       }
     }
 
+    console.log('');
+    const phaseDuration = Math.round((Date.now() - phaseStartTime) / 1000);
     const successRate = (success / articles.length * 100).toFixed(2);
     const threshold = CONFIG.successThreshold[testType] || 90;
     const status = successRate >= threshold ? '🟢 通过' : successRate >= threshold - 10 ? '🟡 警告' : '🔴 危险';
 
-    console.log(`\n📊 ${phase.name} 结果:`);
-    console.log(`  - 成功: ${success}/${articles.length}`);
-    console.log(`  - 失败: ${failed}`);
-    console.log(`  - 成功率: ${successRate}% (阈值: ${threshold}%)`);
-    console.log(`  - 状态: ${status}`);
+    console.log(`\n${'─'.repeat(65)}`);
+    console.log(`📊 ${phase.name} 测试完成`);
+    console.log(`${'─'.repeat(65)}`);
+    this.logger.success(`测试耗时: ${phaseDuration}秒`);
+    this.logger.info(`成功: ${success}/${articles.length} | 失败: ${failed}`);
+    this.logger.info(`成功率: ${successRate}% | 阈值: ${threshold}% | 状态: ${status}`);
+
+    if (failed > 0) {
+      this.logger.warn(`错误统计:`);
+      const errorCounts = {};
+      this.metrics.errors.slice(-articles.length).forEach(e => {
+        const type = e.errorType || '未知错误';
+        errorCounts[type] = (errorCounts[type] || 0) + 1;
+      });
+      Object.entries(errorCounts).forEach(([type, count]) => {
+        console.log(`    - ${type}: ${count}次`);
+      });
+    }
 
     return {
       phase: phase.name,
@@ -292,6 +370,7 @@ class PressureTest9Day {
       successRate: parseFloat(successRate),
       threshold,
       status: successRate >= threshold ? 'pass' : successRate >= threshold - 10 ? 'warning' : 'danger',
+      duration: phaseDuration,
       errors: this.metrics.errors.slice(-10)
     };
   }
@@ -303,6 +382,16 @@ class PressureTest9Day {
 ╚══════════════════════════════════════════════════════════════╝
     `);
 
+    this.logger.info('='.repeat(50));
+    this.logger.info('测试脚本启动');
+    this.logger.info('='.repeat(50));
+
+    const dbStatus = await this.checkDatabaseConnection();
+    if (!dbStatus) {
+      this.logger.error('数据库连接失败，测试无法继续');
+      return;
+    }
+
     let testConfig;
     if (testType === 'article-count') {
       testConfig = CONFIG.test.articleCount;
@@ -311,11 +400,11 @@ class PressureTest9Day {
     } else if (testType === 'interval') {
       testConfig = CONFIG.test.interval;
     } else {
-      console.error('未知的测试类型:', testType);
+      this.logger.error(`未知的测试类型: ${testType}`);
       return;
     }
 
-    console.log(`测试类型: ${testConfig.name}`);
+    console.log(`\n测试类型: ${testConfig.name}`);
     console.log(`测试天数: Day ${testConfig.days > 1 ? `${specificDay || 'all'}` : specificDay}`);
     console.log(`说明: ${testConfig.description}\n`);
 
@@ -334,17 +423,26 @@ class PressureTest9Day {
       ? testConfig.phases.filter(p => p.day === specificDay)
       : testConfig.phases;
 
+    this.logger.info(`将执行 ${phases.length} 个阶段的测试`);
+
     const results = [];
 
-    for (const phase of phases) {
+    for (let i = 0; i < phases.length; i++) {
+      const phase = phases[i];
+      this.logger.info(`\n${'─'.repeat(50)}`);
+      this.logger.info(`开始第 ${i + 1}/${phases.length} 个阶段: ${phase.name}`);
+      this.logger.info(`${'─'.repeat(50)}`);
+
       const result = await this.runPhase(phase, testType);
       if (result) {
         results.push(result);
         this.metrics.phaseResults.push(result);
       }
 
-      if (!this.shouldStop && phases.indexOf(phase) < phases.length - 1) {
-        console.log(`\n⏳ 阶段间暂停2分钟...\n`);
+      if (!this.shouldStop && i < phases.length - 1) {
+        console.log(`\n${'─'.repeat(50)}`);
+        this.logger.info(`阶段 ${phase.name} 完成，休息2分钟后继续下一阶段...`);
+        console.log(`${'─'.repeat(50)}\n`);
         await new Promise(resolve => setTimeout(resolve, 120000));
       }
     }
@@ -367,30 +465,34 @@ class PressureTest9Day {
 ╚══════════════════════════════════════════════════════════════╝
     `);
 
+    this.logger.info('开始9天完整测试流程');
     this.testResults = {};
 
-    console.log('\n========================================');
+    console.log('\n' + '='.repeat(65));
     console.log('第一阶段: Day 1-3 文章数量测试');
-    console.log('========================================\n');
+    console.log('='.repeat(65) + '\n');
     this.testResults['article-count'] = await this.runTest('article-count');
 
-    console.log('\n========================================');
+    console.log('\n' + '='.repeat(65));
     console.log('第二阶段: Day 4-6 公众号数量测试');
-    console.log('========================================\n');
+    console.log('='.repeat(65) + '\n');
     this.testResults['account-count'] = await this.runTest('account-count');
 
-    console.log('\n========================================');
+    console.log('\n' + '='.repeat(65));
     console.log('第三阶段: Day 7-9 间隔时间测试');
-    console.log('========================================\n');
+    console.log('='.repeat(65) + '\n');
     this.testResults['interval'] = await this.runTest('interval');
 
     this.generateFinalReport();
   }
 
   saveReport(results, testType, specificDay) {
+    this.logger.info('正在生成测试报告...');
+
     const reportDir = path.join(__dirname, 'data', '9day-pressure-test');
     if (!fs.existsSync(reportDir)) {
       fs.mkdirSync(reportDir, { recursive: true });
+      this.logger.debug(`创建报告目录: ${reportDir}`);
     }
 
     const date = new Date().toISOString().split('T')[0];
@@ -423,7 +525,7 @@ class PressureTest9Day {
     const mdFile = path.join(reportDir, `${date}-${testType}${dayLabel}-report.md`);
     fs.writeFileSync(mdFile, mdContent);
 
-    console.log(`\n📄 报告已保存:`);
+    this.logger.success(`报告已保存:`);
     console.log(`  JSON: ${jsonFile}`);
     console.log(`  Markdown: ${mdFile}`);
   }
@@ -591,64 +693,71 @@ class PressureTest9Day {
 
     const finalReportFile = path.join(reportDir, `${date}-FINAL-report.md`);
     fs.writeFileSync(finalReportFile, content);
-    console.log(`\n📄 最终报告已保存: ${finalReportFile}`);
+    this.logger.success(`最终报告已保存: ${finalReportFile}`);
   }
 
   printSummary(results, testName) {
     console.log(`
-${'─'.repeat(60)}
-📊 ${testName} - 结果汇总
-${'─'.repeat(60)}
-    `);
+${'═'.repeat(65)}
+📋 测试阶段汇总: ${testName}
+${'═'.repeat(65)}
+`);
 
-    console.log(`总请求数: ${this.metrics.totalRequests}`);
-    console.log(`成功: ${this.metrics.successRequests}`);
-    console.log(`失败: ${this.metrics.failedRequests}`);
-    console.log(`总体成功率: ${(this.metrics.successRequests / this.metrics.totalRequests * 100).toFixed(2)}%`);
-
-    console.log(`\n各阶段结果:`);
     results.forEach(r => {
-      const statusIcon = r.status === 'pass' ? '✅' : r.status === 'warning' ? '⚠️' : '❌';
-      console.log(`  ${statusIcon} ${r.phase}: ${r.successRate}% (${r.success}/${r.total})`);
+      const statusIcon = r.status === 'pass' ? '🟢' : r.status === 'warning' ? '🟡' : '🔴';
+      console.log(`  ${r.phase}: 成功 ${r.success}/${r.total} (${r.successRate}%) ${statusIcon} | 耗时: ${r.duration}秒`);
     });
 
-    if (this.metrics.errors.length > 0) {
-      console.log(`\n主要错误:`);
-      const errorCounts = {};
-      this.metrics.errors.forEach(e => {
-        const type = e.errorType || '未知错误';
-        errorCounts[type] = (errorCounts[type] || 0) + 1;
-      });
-      Object.entries(errorCounts).slice(0, 5).forEach(([type, count]) => {
-        console.log(`  - ${type}: ${count}次`);
-      });
-    }
-  }
+    const totalSuccess = results.reduce((sum, r) => sum + r.success, 0);
+    const totalFailed = results.reduce((sum, r) => sum + r.failed, 0);
+    const totalArticles = results.reduce((sum, r) => sum + r.total, 0);
+    const overallRate = ((totalSuccess / totalArticles) * 100).toFixed(2);
 
-  stop() {
-    console.log('\n🛑 正在停止测试...');
-    this.shouldStop = true;
+    console.log(`
+${'─'.repeat(65)}
+总计: 成功 ${totalSuccess} | 失败 ${totalFailed} | 成功率 ${overallRate}%
+${'─'.repeat(65)}
+`);
   }
 }
 
-if (require.main === module) {
+const main = async () => {
   const args = process.argv.slice(2);
-  const testType = args.find(arg => arg.startsWith('--test='))?.split('=')[1] || 'article-count';
-  const specificDay = args.find(arg => arg.startsWith('--day='))?.split('=')[1];
-  const runAll = args.includes('--run-all');
+  const test = new PressureTest9Day();
 
-  const tester = new PressureTest9Day();
+  const testArg = args.find(arg => arg.startsWith('--test='));
+  const dayArg = args.find(arg => arg.startsWith('--day='));
+  const runAllArg = args.includes('--run-all');
 
-  process.on('SIGINT', () => {
-    tester.stop();
-    setTimeout(() => process.exit(0), 1000);
-  });
-
-  if (runAll) {
-    tester.runAllTests();
+  if (runAllArg) {
+    console.log('启动9天完整测试流程...\n');
+    await test.runAllTests();
+  } else if (testArg && dayArg) {
+    const testType = testArg.replace('--test=', '');
+    const day = parseInt(dayArg.replace('--day=', ''));
+    console.log(`启动单项测试: ${testType} Day ${day}\n`);
+    await test.runTest(testType, day);
+  } else if (testArg) {
+    const testType = testArg.replace('--test=', '');
+    console.log(`启动测试类型: ${testType} (全部天数)\n`);
+    await test.runTest(testType);
   } else {
-    tester.runTest(testType, specificDay ? parseInt(specificDay) : null);
+    console.log(`
+╔══════════════════════════════════════════════════════════════╗
+║       方案B - 9天压力测试脚本                             ║
+║                                                              ║
+║  使用方式:                                                   ║
+║    --test=<type>       测试类型 (article-count/account-count/interval)  ║
+║    --day=N             指定第N天测试                              ║
+║    --run-all           运行全部9天测试                           ║
+║                                                              ║
+║  示例:                                                       ║
+║    node test/pressure-test-9day.js --test=article-count        ║
+║    node test/pressure-test-9day.js --test=account-count --day=4 ║
+║    node test/pressure-test-9day.js --run-all                   ║
+╚══════════════════════════════════════════════════════════════╝
+    `);
   }
-}
+};
 
-module.exports = PressureTest9Day;
+main().catch(console.error);

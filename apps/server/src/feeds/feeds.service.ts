@@ -33,15 +33,20 @@ const SAFE_CONFIG = {
   BATCH_INTERVAL_SECONDS: 300,
   // 每日最大抓取次数
   DAILY_MAX_REQUESTS: 100,
+  // 文章内容最小字节数（小于此值认为是内容不可用）
+  MIN_CONTENT_LENGTH: 500,
 };
 
 // User-Agent 池（轮换使用）
 const USER_AGENTS = [
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
   'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0',
-  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.2 Safari/605.1.15',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:121.0) Gecko/20100101 Firefox/121.0',
+  'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/118.0.0.0 Safari/537.36',
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Edge/120.0.0.0',
+  'Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
 ];
 
 // 获取随机 User-Agent
@@ -259,7 +264,7 @@ export class FeedsService {
     }
 
     const url = `https://mp.weixin.qq.com/s/${id}`;
-    
+
     // 检查每日抓取限制
     if (!checkDailyLimit()) {
       this.logger.warn('已达到每日最大抓取次数限制，跳过文章内容抓取');
@@ -275,9 +280,15 @@ export class FeedsService {
       content = await this.getHtmlByUrl(url);
       this.logger.debug(`成功抓取文章内容: ${url}`);
 
+      // 检查内容长度，内容过少可能是过期或被拦截
+      if (content && content.length < SAFE_CONFIG.MIN_CONTENT_LENGTH) {
+        this.logger.warn(`文章内容过少(${content.length}字节)，标记为内容不可用: ${url}`);
+        content = '内容不可用，该文章可能已过期或被平台限制~';
+      }
+
     } catch (e) {
       this.logger.error(`getHtmlByUrl(${url}) error: ${e.message}`);
-      
+
       // 如果是 403/429，说明被限流
       if (e.response && (e.response.statusCode === 403 || e.response.statusCode === 429)) {
         this.logger.warn(`文章抓取被拒绝，状态码: ${e.response.statusCode}，等待后重试`);
@@ -285,6 +296,12 @@ export class FeedsService {
         try {
           incrementRequestCount();
           content = await this.getHtmlByUrl(url);
+
+          // 重试后仍检查内容长度
+          if (content && content.length < SAFE_CONFIG.MIN_CONTENT_LENGTH) {
+            this.logger.warn(`重试后文章内容仍过少(${content.length}字节)，标记为内容不可用`);
+            content = '内容不可用，该文章可能已过期或被平台限制~';
+          }
         } catch (retryErr) {
           this.logger.error(`重试抓取文章失败: ${retryErr.message}`);
           content = '获取全文失败，请稍后重试~';
@@ -294,11 +311,11 @@ export class FeedsService {
       }
     }
 
-    // 只有成功获取到内容才缓存
-    if (content && !content.includes('获取全文失败')) {
+    // 只有成功获取到内容且内容足够才缓存
+    if (content && !content.includes('获取全文失败') && !content.includes('内容不可用')) {
       mpCache.set(id, content);
     }
-    
+
     return content;
   }
 
