@@ -1006,6 +1006,7 @@ Step 3: 在最大文章+公众号基础上，确定"间隔多久最安全"
 | 开发规则（简版） | `docs/DEVELOPMENT_RULES_SIMPLIFIED.md` | 非技术人员版 |
 | 方案B测试指南 | `docs/SCHEME_B_TEST_GUIDE.md` | 全文存储测试说明 |
 | 数据库设计 | `apps/server/prisma/schema.prisma` | 数据库模型定义 |
+| Day 1-9 测试报告 | `docs/TEST_REPORT_DAY1-9.md` | 完整测试报告（图表版） |
 
 ### 7.2 术语表
 
